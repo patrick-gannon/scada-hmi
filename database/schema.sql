@@ -29,12 +29,8 @@ CREATE TABLE audit_log (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-DELIMITER //
 CREATE TRIGGER settings_audit
 AFTER UPDATE ON settings
 FOR EACH ROW
-BEGIN
-    INSERT INTO audit_log (username, action, old_value, new_value)
-    VALUES ('system', CONCAT('Updated ', OLD.setting_name), OLD.setting_value, NEW.setting_value);
-END;//
-DELIMITER ;
+INSERT INTO audit_log (username, action, old_value, new_value)
+VALUES ('system', CONCAT('Updated ', OLD.setting_name), OLD.setting_value, NEW.setting_value);
