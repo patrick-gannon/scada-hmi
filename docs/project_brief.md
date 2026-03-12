@@ -42,7 +42,7 @@ Phase 1 complete, Phase 2 in progress.
 - Nodes differentiated by node_id in the environment table
 
 ### GitHub
-- Repo: https://github.com/YOURUSERNAME/scada-hmi
+- Repo: https://github.com/patrick-gannon/scada-hmi
 - Sensitive config excluded via .gitignore
 - schema.sql allows full database rebuild with one command
 
