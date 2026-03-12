@@ -2,21 +2,21 @@ import board
 import adafruit_ahtx0
 import mysql.connector
 import time
-import configparser
 from datetime import datetime
+from dotenv import load_dotenv
+import os
 
-# Load config
-config = configparser.ConfigParser()
-config.read('/home/patrick/scada_config.ini')
+# Load .env file
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
-NODE_ID   = config['node']['node_id']
-LOCATION  = config['node']['location']
+NODE_ID  = os.getenv('NODE_ID', 'node_01')
+LOCATION = os.getenv('LOCATION', 'unknown')
 
 db_config = {
-    'host':     config['database']['host'],
-    'user':     config['database']['user'],
-    'password': config['database']['password'],
-    'database': config['database']['database']
+    'host':     os.getenv('DB_HOST'),
+    'user':     os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'database': os.getenv('DB_NAME')
 }
 
 def get_settings(cursor):

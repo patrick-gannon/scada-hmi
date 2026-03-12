@@ -1,3 +1,5 @@
+# Environment files with secrets
+pi/.env
 pi/scada_config.ini
 
 # Python
