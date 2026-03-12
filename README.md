@@ -6,6 +6,32 @@ A real-world SCADA system built on Raspberry Pi, MySQL, and Grafana — designed
 
 This project demonstrates core SCADA/HMI concepts including distributed sensor nodes, a centralized historian database, operator controls, and an alarm management system.
 
+## Hardware
+In-Progress
+<!-- ADD PHOTO: hardware_setup.jpg - Photo of Pi with AHT10 wired up -->
+
+### Wiring
+| AHT10 Pin | Raspberry Pi Pin |
+|---|---|
+| VCC | 3.3V (Pin 1) |
+| GND | GND (Pin 6) |
+| SDA | GPIO2 (Pin 3) |
+| SCL | GPIO3 (Pin 5) |
+
+<!-- ADD DIAGRAM: wiring_diagram.png - GPIO wiring diagram -->
+
+## What is SCADA?
+
+SCADA (Supervisory Control and Data Acquisition) is an industrial control system used to monitor and control equipment in industries like manufacturing, energy, and utilities. This project replicates those concepts on a small scale using a Raspberry Pi as a field device reporting to a central database and operator interface.
+
+## Dashboard
+In-Progress
+<!-- ADD SCREENSHOT: grafana_dashboard.png - Temperature and humidity trends -->
+
+## HMI
+In-Progress
+<!-- ADD SCREENSHOT: hmi_screenshot.png - Operator controls interface -->
+
 ## System Architecture
 ```
 [AHT10 Sensor] → [Raspberry Pi Node] → [SSH Tunnel] → [MySQL on VPS] → [Grafana Dashboard]
