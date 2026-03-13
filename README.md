@@ -25,8 +25,8 @@ In-Progress
 SCADA (Supervisory Control and Data Acquisition) is an industrial control system used to monitor and control equipment in industries like manufacturing, energy, and utilities. This project replicates those concepts on a small scale using a Raspberry Pi as a field device reporting to a central database and operator interface.
 
 ## Dashboard
-In-Progress
-<!-- ADD SCREENSHOT: grafana_dashboard.png - Temperature and humidity trends -->
+Grafana
+![Grafana Dashboard](docs/grafana_dashboard.png)
 
 ## HMI
 In-Progress
