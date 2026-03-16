@@ -1,0 +1,13 @@
+[Unit]
+Description=SCADA Environment Logger
+After=network.target
+
+[Service]
+ExecStartPre=/bin/bash -c 'ssh -f -N -L 3306:127.0.0.1:3306 ${SSH_USER}@${SSH_HOST} 2>/dev/null; sleep 2'
+ExecStart=/usr/bin/python3 /home/patrick/scada-hmi/pi/log_environment.py
+User=patrick
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
