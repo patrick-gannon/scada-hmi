@@ -1,0 +1,31 @@
+[Unit]
+Description=SCADA Environment Logger
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+ExecStartPre=/bin/bash -c '\
+  echo "[$(date)] Starting SSH tunnel..." >> /tmp/scada.log; \
+  for attempt in 1 2 3 4 5; do \
+    if ssh -f -N -L 3306:127.0.0.1:3306 ${SSH_USER}@${SSH_HOST} 2>/tmp/ssh_error.log; then \
+      echo "[$(date)] SSH tunnel established (attempt $attempt)" >> /tmp/scada.log; \
+      sleep 2; \
+      exit 0; \
+    else \
+      echo "[$(date)] SSH tunnel failed (attempt $attempt), retrying..." >> /tmp/scada.log; \
+      sleep 5; \
+    fi; \
+  done; \
+  echo "[$(date)] FATAL: SSH tunnel failed after 5 attempts" >> /tmp/scada.log; \
+  exit 1'
+ExecStart=/usr/bin/python3 /home/patrick/scada-hmi/pi/log_environment.py
+User=patrick
+Restart=always
+RestartSec=10
+ExecStop=/bin/bash -c 'pkill -f "ssh -f -N -L 3306"'
+RestartForceExitStatus=1
+
+[Install]
+WantedBy=multi-user.target
