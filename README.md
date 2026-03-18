@@ -233,4 +233,4 @@ Password: password  ← change immediately after first login
 
 ## Author
 
-Patrick Gannon — Mohawk College Automation Engineering Technology (AET-403)
+Patrick Gannon
