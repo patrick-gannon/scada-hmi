@@ -284,7 +284,7 @@ if (current_user()) {
   </div>
 
   <div class="footer-info">
-    Patrick Gannon &nbsp;·&nbsp; Mohawk College AET-403<br>
+    Patrick Gannon &nbsp;·&nbsp;<br>
     Unauthorized access is prohibited
   </div>
 </div>
