@@ -1,0 +1,20 @@
+# SCADA HMI — .htaccess
+# Place in /var/www/html/environment-monitor/
+
+Options -Indexes
+
+# Block direct access to sensitive files
+<FilesMatch "(\.env|\.env\.template|\.gitignore|.*\.ini|.*\.template|.*\.sql)$">
+    Require all denied
+</FilesMatch>
+
+# Block includes directory
+RedirectMatch 403 ^/environment-monitor/includes/.*$
+
+# Redirect bare /environment-monitor to login if no index
+DirectoryIndex index.php login.php
+
+# Optional: force HTTPS (if not already handled by main vhost)
+# RewriteEngine On
+# RewriteCond %{HTTPS} off
+# RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
