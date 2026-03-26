@@ -53,17 +53,31 @@ A web-based operator interface deployed at [utilities.blue/environment-monitor](
 ## System Architecture
 
 ```
-[AHT10 Sensor] → [Raspberry Pi Node] → [SSH Tunnel] → [MySQL on VPS] → [Grafana Dashboard]
-                                                              ↑
-                                                        [HMI Interface]
-                                                        - Start/Stop logging
-                                                        - Adjust scan rate
-                                                        - Set alarm thresholds
-                                                        - Email / Discord alerts
-                                                        - Audit trail
-                                                        - Kasa plug control
-                                                              ↓
-                                                  [Pi Local Controller] → [Kasa Smart Plugs]
+┌────────────────────────────────────────────────────────────────────────────────────┐
+│                                    VPS / Cloud                                       │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                          │
+│  │   MySQL      │◄───┐│     HMI      │    │   Grafana    │                          │
+│  │  Database    │    │  Interface   │    │ (3rd party)  │                          │
+│  └──────────────┘    └──────────────┘    └──────────────┘                          │
+│         ▲                                                                            │
+└─────────┼────────────────────────────────────────────────────────────────────────────┘
+          │ SSH tunnel (3306)
+          │
+┌─────────┴──────────┐
+│   Raspberry Pi     │
+│   (Single Device)  │
+│                    │──I2C──▶┌──────────────┐
+│                    │        │  AHT10       │
+│                    │        │  Sensor      │
+│                    │        └──────────────┘
+│                    │
+│                    │──SSH reverse──┐
+│                    │   tunnel      │
+│                    │   (8081)      ▼
+│                    │        ┌──────────────┐
+│                    │──LAN──▶│ Kasa Smart   │
+│                    │        │   Plugs      │
+└────────────────────┘        └──────────────┘
 ```
 
 ## Features
