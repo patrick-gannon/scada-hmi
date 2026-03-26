@@ -1011,7 +1011,18 @@ async function loadKasaPlugs() {
     return;
   }
   
-  container.innerHTML = d.plugs.map(plug => `
+  // Fetch live status for each plug
+  const plugsWithStatus = await Promise.all(d.plugs.map(async plug => {
+    try {
+      const status = await apiGet('kasa_plug_status', {ip: plug.ip_address});
+      plug.is_on = status.ok && status.is_on;
+    } catch (e) {
+      plug.is_on = false; // default to off if can't reach
+    }
+    return plug;
+  }));
+  
+  container.innerHTML = plugsWithStatus.map(plug => `
     <div class="ctrl-row" style="margin-bottom:12px;">
       <div class="ctrl-left">
         <div class="ctrl-name">${plug.display_name}</div>
@@ -1019,8 +1030,8 @@ async function loadKasaPlugs() {
       </div>
       <div style="display:flex;align-items:center;">
         ${IS_ADMIN ? 
-          `<button class="kasa-btn off" id="kasaBtn_${plug.plug_id}" onclick="kasaToggle('${plug.plug_id}', this)">OFF</button>` :
-          `<span class="kasa-status" id="kasaStatus_${plug.plug_id}" style="color:var(--text-dim)">—</span>`
+          `<button class="kasa-btn ${plug.is_on ? 'on' : 'off'}" id="kasaBtn_${plug.plug_id}" onclick="kasaToggle('${plug.plug_id}', this)">${plug.is_on ? 'ON' : 'OFF'}</button>` :
+          `<span class="kasa-status" id="kasaStatus_${plug.plug_id}" style="color:var(--text-dim)">${plug.is_on ? 'ON' : 'OFF'}</span>`
         }
       </div>
     </div>

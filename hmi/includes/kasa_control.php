@@ -98,12 +98,13 @@ class KasaController {
             if ($http_code === 200) {
                 $result = json_decode($response, true);
                 if ($result && $result['success']) {
-                    return $result;
+                    // Convert 'success' to 'ok' for API consistency
+                    return ['ok' => true, 'is_on' => $result['is_on'] ?? false];
                 }
             }
         }
         
-        return ['success' => false, 'error' => 'Pi controller unavailable'];
+        return ['ok' => false, 'error' => 'Pi controller unavailable'];
     }
     
     /**

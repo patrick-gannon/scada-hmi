@@ -122,6 +122,19 @@ try {
         exit;
     }
 
+    // ── GET Kasa plug status ───────────────────────────────────────────────
+    if ($action === 'kasa_plug_status') {
+        require_admin();
+        $ip = $_GET['ip'] ?? '';
+        if (!$ip) {
+            echo json_encode(['error' => 'ip required']);
+            exit;
+        }
+        $result = $kasa->getPlugStatus($ip);
+        echo json_encode($result);
+        exit;
+    }
+
     // ── GET Kasa plug triggers ─────────────────────────────────────────────
     if ($action === 'kasa_triggers') {
         require_admin();

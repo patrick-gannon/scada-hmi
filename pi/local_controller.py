@@ -72,9 +72,10 @@ class KasaController:
 class CommandHandler(BaseHTTPRequestHandler):
     """HTTP request handler for receiving commands from VPS"""
     
-    def __init__(self, *args, kasa_controller=None, db_config=None, **kwargs):
+    def __init__(self, *args, kasa_controller=None, db_config=None, plug_cache=None, **kwargs):
         self.kasa = kasa_controller
         self.db_config = db_config
+        self.plug_cache = plug_cache or {}
         super().__init__(*args, **kwargs)
     
     def do_POST(self):
@@ -218,7 +219,7 @@ class LocalController:
     
     def start_http_server(self):
         """Start HTTP server for receiving commands"""
-        port = self.config.getint('local_controller', 'port', fallback=8080)
+        port = self.config.getint('local_controller', 'port', fallback=8081)
         
         def handler(*args, **kwargs):
             return CommandHandler(*args, kasa_controller=self.kasa, db_config=self.db_config, plug_cache=self.plug_cache, **kwargs)
