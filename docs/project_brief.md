@@ -5,7 +5,7 @@ Build a full SCADA/HMI system from scratch as a portfolio / concept project . De
 and automation concepts using affordable hardware and open source software.
 
 ## Current Status
-Phase 1 complete, Phase 2 in progress.
+All phases complete. Project is fully functional with core monitoring, HMI visualization, and automation.
 
 ---
 
@@ -41,9 +41,6 @@ Phase 1 complete, Phase 2 in progress.
 ---
 
 ## Planned / Future
-
-### Visualization
-- Grafana dashboard with temperature/humidity trends
 
 ### Hardware Expansion
 - Additional Pi nodes in different locations
@@ -85,7 +82,7 @@ Phase 1 complete, Phase 2 in progress.
 - Raspberry Pi 4 Model B
 - AHT10 sensor (I2C)
 - MySQL 8 on Ubuntu VPS
-- Grafana (planned)
+- Grafana (completed) — Temperature/humidity trending per node
 - systemd
 - SSH tunneling
 - Git / GitHub
