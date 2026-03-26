@@ -1,8 +1,7 @@
 # SCADA/HMI Project Brief
 
 ## Project Goal
-Build a full SCADA/HMI system from scratch as a portfolio project for Mohawk College
-Automation Engineering Technology (403). Demonstrates real-world industrial controls
+Build a full SCADA/HMI system from scratch as a portfolio / concept project . Demonstrates real-world industrial controls
 and automation concepts using affordable hardware and open source software.
 
 ## Current Status
