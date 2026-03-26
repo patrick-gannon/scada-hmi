@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/kasa_control.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
@@ -65,6 +66,7 @@ function send_email_alert(string $subject, string $body): void {
  */
 function check_and_dispatch_alerts(): array {
     $db  = get_db();
+    $kasa = new KasaController();
     $fired = [];
 
     // Get all nodes with a recent reading (last 10 minutes)
@@ -88,6 +90,9 @@ function check_and_dispatch_alerts(): array {
     // keyed by node_id; also check for 'global' node_id as fallback
 
     foreach ($latest as $node_id => $row) {
+        // Check automatic Kasa triggers first
+        $kasa->checkAutomaticTriggers($node_id, $row['temperature'], $row['humidity']);
+        
         // Use node-specific threshold only if it has at least one value set,
         // otherwise fall back to global
         $node_t   = $thresholds[$node_id] ?? null;

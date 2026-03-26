@@ -1,0 +1,17 @@
+[Unit]
+Description=SCADA Local Controller (Simplified)
+After=network.target
+
+[Service]
+Type=simple
+User=patrick
+Group=patrick
+WorkingDirectory=/home/patrick/scada-hmi/pi
+ExecStart=/usr/bin/python3 local_controller_simple.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

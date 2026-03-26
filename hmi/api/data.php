@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/kasa_control.php';
 
 header('Content-Type: application/json');
 
@@ -15,6 +16,7 @@ $user   = current_user();
 
 try {
     $db = get_db();
+    $kasa = new KasaController();
 
     // ── GET live readings ───────────────────────────────────────────────────
     if ($action === 'live') {
@@ -23,11 +25,13 @@ try {
                    COALESCE(n.display_name, e.node_id) AS display_name,
                    e.temperature, e.humidity, e.recorded_at,
                    TIMESTAMPDIFF(SECOND, e.recorded_at, NOW()) AS age_seconds
-            FROM environment e
+            FROM (
+                SELECT node_id, MAX(recorded_at) as max_time 
+                FROM environment 
+                GROUP BY node_id
+            ) latest
+            INNER JOIN environment e ON e.node_id = latest.node_id AND e.recorded_at = latest.max_time
             LEFT JOIN hmi_nodes n ON n.node_id = e.node_id
-            WHERE e.recorded_at = (
-                SELECT MAX(e2.recorded_at) FROM environment e2 WHERE e2.node_id = e.node_id
-            )
             ORDER BY e.node_id
         ")->fetchAll();
 
@@ -107,6 +111,54 @@ try {
         ");
         $stmt->execute([$node]);
         echo json_encode(['ok' => true, 'history' => $stmt->fetchAll()]);
+        exit;
+    }
+
+    // ── GET Kasa plugs ─────────────────────────────────────────────────────
+    if ($action === 'kasa_plugs') {
+        require_admin();
+        $plugs = $kasa->getAllPlugs();
+        echo json_encode(['ok' => true, 'plugs' => $plugs]);
+        exit;
+    }
+
+    // ── GET Kasa plug triggers ─────────────────────────────────────────────
+    if ($action === 'kasa_triggers') {
+        require_admin();
+        $plug_id = $_GET['plug_id'] ?? '';
+        if (!$plug_id) {
+            echo json_encode(['error' => 'plug_id required']);
+            exit;
+        }
+        $triggers = $kasa->getPlugTriggers($plug_id);
+        echo json_encode(['ok' => true, 'triggers' => $triggers]);
+        exit;
+    }
+
+    // ── GET plug actions log ─────────────────────────────────────────────────
+    if ($action === 'kasa_actions_log') {
+        require_admin();
+        $limit = min((int)($_GET['limit'] ?? 50), 200);
+        $plug_id = $_GET['plug_id'] ?? '';
+        
+        $sql = "
+            SELECT pal.*, kp.display_name, kp.location
+            FROM plug_actions_log pal
+            JOIN kasa_plugs kp ON pal.plug_id = kp.plug_id
+        ";
+        $params = [];
+        
+        if ($plug_id) {
+            $sql .= " WHERE pal.plug_id = ?";
+            $params[] = $plug_id;
+        }
+        
+        $sql .= " ORDER BY pal.created_at DESC LIMIT ?";
+        $params[] = $limit;
+        
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        echo json_encode(['ok' => true, 'actions' => $stmt->fetchAll()]);
         exit;
     }
 

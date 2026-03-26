@@ -42,7 +42,7 @@ A web-based operator interface deployed at [utilities.blue/environment-monitor](
 - **Sparklines** — 1-hour trend graph per node, per measurement
 - **Online/offline detection** — nodes marked offline if no reading within 1.5× scan interval
 - **Operator controls** — start/stop logging, adjust scan rate, all changes reflect on field devices immediately
-- **Kasa smart plug controls** — trigger outlets from the HMI (stub, wired to audit trail)
+- **Kasa smart plug controls** — control TP-Link Kasa smart plugs from the HMI with manual, time-based, and automated sensor triggers
 - **Per-node thresholds** — set high/low limits for temperature and humidity per node or globally
 - **Alarm historian** — all threshold breaches logged with 30-minute cooldown between alerts
 - **Email alerts** — PHPMailer/Gmail SMTP notifications on threshold breach
@@ -62,6 +62,9 @@ A web-based operator interface deployed at [utilities.blue/environment-monitor](
                                                         - Set alarm thresholds
                                                         - Email / Discord alerts
                                                         - Audit trail
+                                                        - Kasa plug control
+                                                              ↓
+                                                  [Pi Local Controller] → [Kasa Smart Plugs]
 ```
 
 ## Features
@@ -72,7 +75,7 @@ A web-based operator interface deployed at [utilities.blue/environment-monitor](
 - Audit trail — all operator actions logged with username, old and new values
 - Auto-restart — systemd service restarts the logger on reboot or crash
 - Alarm management — email and Discord alerts on threshold breach
-- Kasa smart plug integration — outlet control from HMI (in progress)
+- Kasa smart plug integration — manual, time-based, and automated control of TP-Link Kasa smart plugs based on sensor thresholds
 
 ## Tech Stack
 
@@ -84,6 +87,7 @@ A web-based operator interface deployed at [utilities.blue/environment-monitor](
 | Database | MySQL on VPS |
 | Visualization | Grafana |
 | HMI | PHP, PDO, PHPMailer — Apache on VPS |
+| Smart Plugs | TP-Link Kasa (HS100/HS103/HS125) |
 | Alerts | Email (Gmail SMTP) / Discord Webhook |
 | Language | Python 3 (field) / PHP 8 (HMI) |
 
@@ -95,8 +99,7 @@ scada-hmi/
 │   ├── log_environment.py        # Main logging script
 │   └── scada_config.template.ini # Config template (copy to scada_config.ini)
 ├── database/
-│   ├── schema.sql                # Core database schema (environment, settings, audit_log)
-│   └── hmi_schema.sql            # HMI additions (users, nodes, thresholds, alarm_log)
+│   └── schema.sql                # All database tables (core + HMI + plugs)
 ├── hmi/                          # Web-based operator interface
 │   ├── index.php                 # Main dashboard
 │   ├── login.php                 # Authentication
@@ -110,8 +113,7 @@ scada-hmi/
 │   │   └── alerts.php            # Threshold checker and alert dispatcher (cron)
 │   ├── .env.template             # Environment variable template
 │   ├── .htaccess                 # Directory protection
-│   ├── composer.json             # PHP dependencies (PHPMailer)
-│   └── hmi_schema.sql            # HMI database tables
+│   └── composer.json             # PHP dependencies (PHPMailer)
 ├── docs/                         # Wiring diagrams and documentation
 └── README.md
 ```
@@ -138,7 +140,7 @@ nano pi/scada_config.ini
 
 #### 4. Install dependencies
 ```bash
-pip3 install adafruit-circuitpython-ahtx0 mysql-connector-python --break-system-packages
+pip3 install adafruit-circuitpython-ahtx0 mysql-connector-python python-kasa --break-system-packages
 ```
 
 #### 5. Run the logger
@@ -152,6 +154,70 @@ sudo cp pi/scada.service /etc/systemd/system/
 sudo systemctl enable scada
 sudo systemctl start scada
 ```
+
+#### 7. Set up local controller for Kasa plugs
+```bash
+sudo cp pi/local_controller.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable local_controller
+sudo systemctl start local_controller
+```
+
+---
+
+### Kasa Smart Plug Setup
+
+#### 1. Install python-kasa (if not already installed)
+```bash
+pip3 install python-kasa --break-system-packages
+```
+
+#### 2. Discover your Kasa plugs
+```bash
+python3 -m kasa discover
+```
+
+#### 3. Configure plugs in the HMI
+- Log in to the HMI as admin
+- Go to the Controls tab
+- Click "+ Add Smart Plug" 
+- Enter plug details (ID, name, IP address, location)
+- Create triggers:
+  - **Manual triggers**: Control from HMI interface
+  - **Time-based triggers**: Schedule on/off at specific times (e.g., 21:00 turn off)
+  - **Sensor triggers**: Automated control based on temperature/humidity thresholds
+
+#### 4. Configure Pi communication
+
+**For local HMI (same network as Pi):**
+Add to your HMI `.env` file:
+```
+PI_IP_ADDRESS=192.168.1.XXX
+```
+
+**For remote VPS (Pi behind NAT):**
+Set up SSH reverse tunnel from Pi to VPS:
+```bash
+ssh -fN -R 8081:localhost:8081 user@your-vps-ip
+```
+
+Then add to VPS HMI `.env`:
+```
+PI_IP_ADDRESS=127.0.0.1
+PI_PORT=8081
+```
+
+#### 5. Set up time-based trigger cron job
+```bash
+sudo crontab -e -u www-data
+# Add for minute-by-minute time trigger checking:
+* * * * * /usr/bin/php /var/www/html/environment-monitor/includes/time_triggers.php >> /var/log/scada-time-triggers.log 2>&1
+```
+
+#### 6. Supported plug models
+- TP-Link Kasa HS100, HS103, HS125, and other Kasa smart plugs
+- Plugs must be on the same network as the Raspberry Pi
+- No cloud account required - uses local network control
 
 ---
 
@@ -180,10 +246,12 @@ chmod 640 .env
 chown www-data:www-data .env
 ```
 
-#### 4. Set up HMI database tables
+#### 4. Set up database tables
 ```bash
-mysql -u your_db_user -p scada < hmi_schema.sql
+mysql -u your_db_user -p scada < database/schema.sql
 ```
+
+This single schema file includes all tables: core SCADA (environment, settings), HMI (users, nodes, thresholds), and Kasa plugs (plugs, triggers, actions_log).
 
 #### 5. Configure Apache
 Add to your SSL VirtualHost:
@@ -230,6 +298,7 @@ Password: password  ← change immediately after first login
 | Audit log | Regulatory compliance logging |
 | Multi-node support | Distributed control system |
 | Role-based access | Operator vs engineer access levels |
+| Automated triggers | Control loops and interlocks |
 
 ## Author
 

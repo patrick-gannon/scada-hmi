@@ -597,37 +597,31 @@ canvas.sparkline { width:100%; height:48px; display:block; }
       <div class="panel" data-label="Kasa Smart Plug Controls">
         <div class="c tl"></div><div class="c tr"></div><div class="c bl"></div><div class="c br"></div>
         <div class="panel-body">
-          <div class="ctrl-row">
-            <div class="ctrl-left">
-              <div class="ctrl-name">OUTLET — SWITCH 1</div>
-              <div class="ctrl-desc">Plug A — assigned device</div>
-            </div>
-            <div style="display:flex;align-items:center;">
-              <?php if($is_admin): ?>
-              <button class="kasa-btn off" id="kasaBtn1" onclick="kasaToggle('switch_01', this)">OFF</button>
-              <?php else: ?>
-              <span class="kasa-status" id="kasaStatus1" style="color:var(--text-dim)">—</span>
-              <?php endif; ?>
-            </div>
+          <div id="kasaPlugsList" style="color:var(--text-dim);font-size:11px;">Loading smart plugs...</div>
+          
+          <?php if($is_admin): ?>
+          <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+            <button class="apply-btn" onclick="showAddPlugForm()">+ Add Smart Plug</button>
           </div>
-          <div class="ctrl-row">
-            <div class="ctrl-left">
-              <div class="ctrl-name">OUTLET — SWITCH 2</div>
-              <div class="ctrl-desc">Plug B — assigned device</div>
-            </div>
-            <div style="display:flex;align-items:center;">
-              <?php if($is_admin): ?>
-              <button class="kasa-btn off" id="kasaBtn2" onclick="kasaToggle('switch_02', this)">OFF</button>
-              <?php else: ?>
-              <span class="kasa-status" id="kasaStatus2" style="color:var(--text-dim)">—</span>
-              <?php endif; ?>
-            </div>
-          </div>
-          <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border); font-size:9px; color:var(--text-dim); letter-spacing:1px; line-height:1.8;">
-            ⚠ Kasa integration pending. Actions are logged to audit trail.
+          <?php endif; ?>
+        </div>
+      </div>
+
+      <!-- Add Plug Form (hidden by default) -->
+      <div id="addPlugForm" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:var(--panel); border:1px solid var(--border); padding:20px; z-index:1000; min-width:400px;">
+        <h3 style="margin-bottom:16px; color:var(--text);">Add Smart Plug</h3>
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          <input type="text" id="newPlugId" placeholder="Plug ID (e.g., living_room_lamp)" style="background:var(--panel2); border:1px solid var(--border2); color:var(--text); padding:8px;">
+          <input type="text" id="newPlugName" placeholder="Display Name (e.g., Living Room Lamp)" style="background:var(--panel2); border:1px solid var(--border2); color:var(--text); padding:8px;">
+          <input type="text" id="newPlugIp" placeholder="IP Address (e.g., 192.168.1.100)" style="background:var(--panel2); border:1px solid var(--border2); color:var(--text); padding:8px;">
+          <input type="text" id="newPlugLocation" placeholder="Location (optional)" style="background:var(--panel2); border:1px solid var(--border2); color:var(--text); padding:8px;">
+          <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <button class="apply-btn" onclick="hideAddPlugForm()">Cancel</button>
+            <button class="apply-btn" onclick="addNewPlug()">Add Plug</button>
           </div>
         </div>
       </div>
+      <div id="addPlugOverlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.7); z-index:999;" onclick="hideAddPlugForm()"></div>
 
       <!-- Node Display Names -->
       <?php if($is_admin): ?>
@@ -759,7 +753,7 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
     if (tab.dataset.tab === 'alarms') loadAlarms();
     if (tab.dataset.tab === 'users' && IS_ADMIN) loadUsers();
     if (tab.dataset.tab === 'thresholds') loadThresholds();
-    if (tab.dataset.tab === 'controls') { loadSettings(); if(IS_ADMIN) loadNodeRename(); }
+    if (tab.dataset.tab === 'controls') { loadSettings(); if(IS_ADMIN) { loadNodeRename(); loadKasaPlugs(); } }
   });
 });
 
@@ -1007,15 +1001,85 @@ async function renameNode(nodeId) {
 }
 
 // ── KASA ──────────────────────────────────────────────────────────────
-async function kasaToggle(switchId, btn) {
+async function loadKasaPlugs() {
+  const d = await apiGet('kasa_plugs');
+  if (!d.ok) return;
+  
+  const container = document.getElementById('kasaPlugsList');
+  if (!d.plugs || d.plugs.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-dim);font-size:11px;">No smart plugs configured.</div>';
+    return;
+  }
+  
+  container.innerHTML = d.plugs.map(plug => `
+    <div class="ctrl-row" style="margin-bottom:12px;">
+      <div class="ctrl-left">
+        <div class="ctrl-name">${plug.display_name}</div>
+        <div class="ctrl-desc">${plug.location || plug.ip_address}</div>
+      </div>
+      <div style="display:flex;align-items:center;">
+        ${IS_ADMIN ? 
+          `<button class="kasa-btn off" id="kasaBtn_${plug.plug_id}" onclick="kasaToggle('${plug.plug_id}', this)">OFF</button>` :
+          `<span class="kasa-status" id="kasaStatus_${plug.plug_id}" style="color:var(--text-dim)">—</span>`
+        }
+      </div>
+    </div>
+  `).join('');
+}
+
+async function kasaToggle(plugId, btn) {
   const isOn = btn.textContent.trim() === 'ON';
-  const d = await apiPost('kasa_toggle', {switch_id: switchId, state: !isOn});
+  const d = await apiPost('kasa_toggle', {switch_id: plugId, state: !isOn});
   if (d.ok) {
     const newState = !isOn;
     btn.textContent = newState ? 'ON' : 'OFF';
     btn.className = 'kasa-btn ' + (newState ? 'on' : 'off');
-    toast(`${switchId} turned ${newState ? 'ON' : 'OFF'} — logged`, 'ok');
-  } else toast(d.error || 'Error', 'err');
+    toast(`${d.display_name || plugId} turned ${newState ? 'ON' : 'OFF'}`, 'ok');
+  } else {
+    toast(d.error || 'Error', 'err');
+  }
+}
+
+function showAddPlugForm() {
+  document.getElementById('addPlugForm').style.display = 'block';
+  document.getElementById('addPlugOverlay').style.display = 'block';
+}
+
+function hideAddPlugForm() {
+  document.getElementById('addPlugForm').style.display = 'none';
+  document.getElementById('addPlugOverlay').style.display = 'none';
+  // Clear form
+  document.getElementById('newPlugId').value = '';
+  document.getElementById('newPlugName').value = '';
+  document.getElementById('newPlugIp').value = '';
+  document.getElementById('newPlugLocation').value = '';
+}
+
+async function addNewPlug() {
+  const plugId = document.getElementById('newPlugId').value.trim();
+  const displayName = document.getElementById('newPlugName').value.trim();
+  const ipAddress = document.getElementById('newPlugIp').value.trim();
+  const location = document.getElementById('newPlugLocation').value.trim();
+  
+  if (!plugId || !displayName || !ipAddress) {
+    toast('Plug ID, Display Name, and IP Address are required', 'err');
+    return;
+  }
+  
+  const d = await apiPost('kasa_add_plug', {
+    plug_id: plugId,
+    display_name: displayName,
+    ip_address: ipAddress,
+    location: location
+  });
+  
+  if (d.ok) {
+    toast('Smart plug added successfully', 'ok');
+    hideAddPlugForm();
+    loadKasaPlugs(); // Reload the plugs list
+  } else {
+    toast(d.error || 'Error adding plug', 'err');
+  }
 }
 
 // ── THRESHOLDS ────────────────────────────────────────────────────────
