@@ -1,6 +1,9 @@
 <?php
 require_once __DIR__ . '/db.php';
 
+// Ensure socket timeouts allow for slow Kasa responses
+ini_set('default_socket_timeout', 30);
+
 class KasaController {
     private $db;
     private $pi_ip;
@@ -13,9 +16,49 @@ class KasaController {
     }
     
     /**
-     * Control a Kasa plug via Pi local controller
+     * Control a Kasa plug via Pi local controller with retry logic
      */
     public function controlPlug($ipAddress, $state) {
+        $maxRetries = 2;
+        $retryDelay = 1; // seconds
+        
+        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+            $result = $this->controlPlugAttempt($ipAddress, $state);
+            
+            // Success - return immediately
+            if ($result['success']) {
+                return $result;
+            }
+            
+            // Check if error is retryable (HTTP 0 = connection failed, HTTP 5xx = server error)
+            $error = $result['error'] ?? '';
+            $isRetryable = (
+                strpos($error, 'HTTP 0') !== false ||
+                strpos($error, 'HTTP 502') !== false ||
+                strpos($error, 'HTTP 503') !== false ||
+                strpos($error, 'HTTP 504') !== false ||
+                strpos($error, 'timed out') !== false ||
+                strpos($error, 'Connection refused') !== false
+            );
+            
+            // If it's not a retryable error or this was the last attempt, return the error
+            if (!$isRetryable || $attempt >= $maxRetries) {
+                return $result;
+            }
+            
+            // Wait before retry (exponential backoff)
+            error_log("Plug control attempt $attempt failed with retryable error: $error. Retrying in {$retryDelay}s...");
+            sleep($retryDelay);
+            $retryDelay *= 2; // Double the delay for next attempt
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * Single attempt to control a Kasa plug
+     */
+    private function controlPlugAttempt($ipAddress, $state) {
         // Control via Pi local controller (tunnel or direct)
         $action = $state ? 'turn_on' : 'turn_off';
         $data = [
@@ -30,18 +73,21 @@ class KasaController {
             CURLOPT_POSTFIELDS => json_encode($data),
             CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 10
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_CONNECTTIMEOUT => 5
         ]);
         
         $response = curl_exec($ch);
         $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curl_error = curl_error($ch);
         curl_close($ch);
         
         if ($http_code === 200) {
             $result = json_decode($response, true);
             return $result ?: ['success' => false, 'error' => 'Invalid response'];
         } else {
-            return ['success' => false, 'error' => 'Pi controller unavailable: HTTP ' . $http_code];
+            $errorMsg = $curl_error ? "Connection error: $curl_error" : "Pi controller unavailable: HTTP $http_code";
+            return ['success' => false, 'error' => $errorMsg];
         }
     }
     
@@ -74,37 +120,110 @@ class KasaController {
     }
     
     /**
-     * Get plug status
+     * Get plug status with retry and fallback to direct query
      */
     public function getPlugStatus($ipAddress) {
-        // Try via Pi local controller
-        $plug_id = $this->getPlugIdByIp($ipAddress);
-        if ($plug_id) {
-            $data = ['command' => 'get_plug_status', 'plug_id' => $plug_id];
+        $maxRetries = 2;
+        $retryDelay = 1;
+        
+        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+            $result = $this->getPlugStatusAttempt($ipAddress);
             
-            $ch = curl_init("http://{$this->pi_ip}:{$this->pi_port}");
-            curl_setopt_array($ch, [
-                CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => json_encode($data),
-                CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => 10
-            ]);
-            
-            $response = curl_exec($ch);
-            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-            
-            if ($http_code === 200) {
-                $result = json_decode($response, true);
-                if ($result && $result['success']) {
-                    // Convert 'success' to 'ok' for API consistency
-                    return ['ok' => true, 'is_on' => $result['is_on'] ?? false];
-                }
+            if ($result['ok']) {
+                return $result;
             }
+            
+            // Check if error is retryable
+            $error = $result['error'] ?? '';
+            $isRetryable = (
+                strpos($error, 'HTTP 0') !== false ||
+                strpos($error, 'HTTP 502') !== false ||
+                strpos($error, 'HTTP 503') !== false ||
+                strpos($error, 'HTTP 504') !== false ||
+                strpos($error, 'timed out') !== false ||
+                strpos($error, 'Connection refused') !== false
+            );
+            
+            if (!$isRetryable || $attempt >= $maxRetries) {
+                // Try fallback direct method before giving up
+                $fallback = $this->getPlugStatusDirect($ipAddress);
+                if ($fallback['ok']) {
+                    error_log("Status fallback succeeded for $ipAddress");
+                    return $fallback;
+                }
+                return $result;
+            }
+            
+            error_log("Status check attempt $attempt failed: $error. Retrying...");
+            sleep($retryDelay);
+            $retryDelay *= 2;
         }
         
-        return ['ok' => false, 'error' => 'Pi controller unavailable'];
+        return $result;
+    }
+    
+    /**
+     * Single attempt to get plug status via controller
+     */
+    private function getPlugStatusAttempt($ipAddress) {
+        $plug_id = $this->getPlugIdByIp($ipAddress);
+        if (!$plug_id) {
+            return ['ok' => false, 'error' => 'Plug not found in database'];
+        }
+        
+        $data = ['command' => 'get_plug_status', 'plug_id' => $plug_id];
+        
+        $ch = curl_init("http://{$this->pi_ip}:{$this->pi_port}");
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($data),
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_CONNECTTIMEOUT => 5
+        ]);
+        
+        $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curl_error = curl_error($ch);
+        curl_close($ch);
+        
+        if ($http_code === 200) {
+            $result = json_decode($response, true);
+            if ($result && $result['success']) {
+                return ['ok' => true, 'is_on' => $result['is_on'] ?? false];
+            }
+            return ['ok' => false, 'error' => 'Invalid response from controller'];
+        }
+        
+        $errorMsg = $curl_error ? "Connection error: $curl_error" : "Pi controller unavailable: HTTP $http_code";
+        return ['ok' => false, 'error' => $errorMsg];
+    }
+    
+    /**
+     * Direct plug status check (fallback when controller fails)
+     */
+    private function getPlugStatusDirect($ipAddress) {
+        try {
+            $cmd = "python3 -m kasa --host " . escapeshellarg($ipAddress) . " --json 2>&1";
+            $output = [];
+            $return_code = 0;
+            exec($cmd, $output, $return_code);
+            
+            if ($return_code === 0 && !empty($output)) {
+                $json = implode("\n", $output);
+                $data = json_decode($json, true);
+                if ($data && is_array($data)) {
+                    // led_off: true = LED off (plug is ON), false = LED on (plug is OFF)
+                    $is_on = !($data['led_off'] ?? true);
+                    return ['ok' => true, 'is_on' => $is_on, 'source' => 'direct'];
+                }
+            }
+            
+            return ['ok' => false, 'error' => 'Direct status check failed'];
+        } catch (Exception $e) {
+            return ['ok' => false, 'error' => 'Direct status error: ' . $e->getMessage()];
+        }
     }
     
     /**

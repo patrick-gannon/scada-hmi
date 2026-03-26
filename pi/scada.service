@@ -1,13 +1,15 @@
 [Unit]
-Description=SCADA Environment Logger
-After=network.target
+Description=SCADA Environment Logger with SSH Tunnels
+After=network.target local_controller.service
+Wants=local_controller.service
 
 [Service]
-ExecStartPre=/bin/bash -c 'ssh -f -N -L 3306:127.0.0.1:3306 ${SSH_USER}@${SSH_HOST}; ssh -f -N -R 8081:localhost:8081 ${SSH_USER}@${SSH_HOST}; sleep 2'
-ExecStart=/usr/bin/python3 /home/patrick/scada-hmi/pi/log_environment.py
+Type=simple
 User=patrick
+ExecStart=/home/patrick/scada-hmi/pi/scada_wrapper.sh
+ExecStopPost=-/bin/bash -c 'pkill -f "ssh.*3306:127.0.0.1:3306" 2>/dev/null || true; pkill -f "ssh.*8081:localhost:8081" 2>/dev/null || true'
 Restart=always
-RestartSec=10
+RestartSec=15
 Environment="SSH_USER=pgannon"
 Environment="SSH_HOST=69.48.207.60"
 

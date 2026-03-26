@@ -15,6 +15,7 @@ import mysql.connector
 import threading
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn
 from dotenv import load_dotenv
 import os
 
@@ -447,6 +448,11 @@ asyncio.run(control())
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
+class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    """Multi-threaded HTTP server to handle concurrent requests"""
+    daemon_threads = True  # Allow server to exit even if threads are still running
+    allow_reuse_address = True  # Allow quick restart on same port
+
 class SimpleCommandHandler(BaseHTTPRequestHandler):
     """Simplified HTTP request handler"""
     
@@ -456,7 +462,10 @@ class SimpleCommandHandler(BaseHTTPRequestHandler):
         super().__init__(*args, **kwargs)
     
     def do_POST(self):
-        """Handle POST requests"""
+        """Handle POST requests with timeout protection"""
+        # Set socket timeout for this request to prevent hanging
+        self.connection.settimeout(30)  # 30 second timeout for the entire request
+        
         content_length = int(self.headers['Content-Length'])
         post_data = self.rfile.read(content_length)
         
@@ -464,18 +473,31 @@ class SimpleCommandHandler(BaseHTTPRequestHandler):
             data = json.loads(post_data.decode('utf-8'))
             command = data.get('command')
             
-            if command == 'control_plug':
-                result = self.handle_control_plug(data)
-            elif command == 'get_plug_status':
-                result = self.handle_get_status(data)
-            elif command == 'list_plugs':
-                result = self.handle_list_plugs()
-            elif command == 'discover_plugs':
-                result = self.handle_discover_plugs()
-            elif command == 'test':
-                result = {'success': True, 'message': 'Local controller is working', 'plugs_found': len(self.plug_cache)}
-            else:
-                result = {'success': False, 'error': 'Unknown command'}
+            # Use a thread-safe approach with timeout for potentially slow operations
+            import concurrent.futures
+            
+            def execute_command():
+                if command == 'control_plug':
+                    return self.handle_control_plug(data)
+                elif command == 'get_plug_status':
+                    return self.handle_get_status(data)
+                elif command == 'list_plugs':
+                    return self.handle_list_plugs()
+                elif command == 'discover_plugs':
+                    return self.handle_discover_plugs()
+                elif command == 'test':
+                    return {'success': True, 'message': 'Local controller is working', 'plugs_found': len(self.plug_cache)}
+                else:
+                    return {'success': False, 'error': 'Unknown command'}
+            
+            # Execute with timeout to prevent hanging
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(execute_command)
+                try:
+                    result = future.result(timeout=25)  # 25 second timeout for command execution
+                except concurrent.futures.TimeoutError:
+                    result = {'success': False, 'error': 'Command execution timed out'}
+                    logging.error(f"Command {command} timed out after 25 seconds")
             
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
@@ -483,6 +505,7 @@ class SimpleCommandHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(result).encode())
             
         except Exception as e:
+            logging.error(f"Error in do_POST: {str(e)}")
             self.send_response(500)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
@@ -692,8 +715,8 @@ class SimpleLocalController:
         def handler(*args, **kwargs):
             return SimpleCommandHandler(*args, kasa_controller=self.kasa, plug_cache=self.plug_cache, **kwargs)
         
-        server = HTTPServer(('0.0.0.0', port), handler)
-        self.logger.info(f"Simplified local controller started on port {port}")
+        server = ThreadedHTTPServer(('0.0.0.0', port), handler)
+        self.logger.info(f"Simplified local controller started on port {port} (multi-threaded)")
         server.serve_forever()
     
     def trigger_loop(self):
