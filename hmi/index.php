@@ -533,6 +533,12 @@ canvas.sparkline { width:100%; height:48px; display:block; }
   .trigger-table { font-size:11px; }
   .trigger-table th, .trigger-table td { padding:6px 4px; }
   .day-chip { padding:3px 5px; font-size:9px; }
+
+  /* log tables - horizontal scroll on mobile */
+  .log-table { font-size:12px; }
+  .log-table th, .log-table td { padding:8px 6px; white-space:nowrap; }
+  .log-table .col-action { max-width:150px; overflow:hidden; text-overflow:ellipsis; }
+  .panel-body:has(.log-table) { overflow-x:auto; }
 }
 </style>
 </head>
