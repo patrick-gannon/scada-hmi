@@ -11,78 +11,43 @@ Phase 1 complete, Phase 2 in progress.
 
 ## Completed
 
-### Hardware
-- Raspberry Pi 4 Model B
-- AHT10 Temperature & Humidity Sensor (I2C, address 0x38)
-- Wiring: SDA → GPIO2, SCL → GPIO3, VCC → 3.3V, GND → GND
+### Phase 1: Core System
+- Raspberry Pi 4 Model B with AHT10 temperature/humidity sensor
+- MySQL database on VPS with SSH tunnel
+- Python logger with systemd service
+- Multi-node support with node IDs
 
-### Software
-- I2C enabled via raspi-config
-- Adafruit AHTx0 CircuitPython library
-- Python logger script reads sensor and writes to MySQL
-- SSH tunnel from Pi to VPS for secure database connection
-- SSH key authentication (passwordless)
-- systemd service (scada.service) for auto-start and auto-restart on reboot
+### Phase 2: HMI & Visualization
+- Web-based HMI with authentication (bcrypt, sessions)
+- Role-based access (admin/viewer)
+- Live data view with sparklines
+- Per-node thresholds and alarm management
+- Email and Discord alerts
+- Audit trail logging
+- User management
+- **Grafana dashboard** — Temperature/humidity trending per node
 
-### Database (MySQL on VPS)
-- Database: `scada`
-- Table: `environment` — stores node_id, temperature, humidity, recorded_at
-- Table: `settings` — dynamic operator controls read by Pi each loop
-  - `log_interval` — scan rate in seconds (default 300)
-  - `logging_active` — start/stop logging (1=active, 0=paused)
-- Table: `audit_log` — tracks all changes to settings table
-  - MySQL trigger `settings_audit` auto-logs old/new values on every update
-  - HMI will write username when operator makes changes
-
-### Multi-Node Support
-- Each Pi has a local `scada_config.ini` (gitignored) with node_id and location
-- `scada_config.template.ini` is committed to GitHub as a safe reference
-- Script reads identity from config — identical script runs on every node
-- Nodes differentiated by node_id in the environment table
-
-### GitHub
-- Repo: https://github.com/patrick-gannon/scada-hmi
-- Sensitive config excluded via .gitignore
-- schema.sql allows full database rebuild with one command
+### Phase 3: Automation System (Completed)
+- **Kasa smart plug integration**
+  - Manual control from HMI
+  - Time-based schedules with day-of-week selection
+  - Sensor triggers (temperature/humidity thresholds)
+  - Action logging with trigger names
+  - 1-hour cooldown between trigger firings
+- **Automation tab** in HMI for schedule/trigger management
+- **Cron jobs**: Time schedules (check_schedules.php) and sensor triggers (alerts.php)
+- **Pi health monitoring**: check_tunnel.sh for automatic tunnel restart
 
 ---
 
-## In Progress
-- Phase 2: Grafana dashboard connected to MySQL
-  - Temperature and humidity trends per node
-  - Filter by node_id
+## Planned / Future
 
----
+### Visualization
+- Grafana dashboard with temperature/humidity trends
 
-## Planned
-
-### HMI Application
-- Web-based interface (framework TBD)
-- Operator controls:
-  - Start/stop logging
-  - Adjust scan rate (log_interval)
-  - Set alarm thresholds per node
-- User authentication (operator vs admin roles)
-- Audit trail display
-- All HMI actions write username to audit_log
-
-### Alarm Management
-- Threshold settings stored in database
-- Notifications:
-  - Email alerts
-  - Discord webhook messages
-  - Kasa smart plug interaction (on/off based on conditions)
-- Alarm historian — log every threshold breach with timestamp
-
-### Kasa Smart Plug Monitoring
-- python-kasa library
-- Monitor plug state and power usage
-- Log to separate table in MySQL
-- Display in Grafana alongside environment data
-
-### Future Hardware
+### Hardware Expansion
 - Additional Pi nodes in different locations
-- Potentially different sensor types on future nodes
+- Different sensor types on future nodes
 - MQTT protocol for node communication (industry standard)
 
 ---

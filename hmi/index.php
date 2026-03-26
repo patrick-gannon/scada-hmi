@@ -454,6 +454,32 @@ canvas.sparkline { width:100%; height:48px; display:block; }
 ::-webkit-scrollbar-thumb:hover { background:var(--amber-dim); }
 
 /* responsive */
+.day-chip {
+  display:flex; align-items:center; gap:4px;
+  background:rgba(0,0,0,0.3); border:1px solid var(--border2);
+  padding:4px 8px; font-size:11px; letter-spacing:1px;
+  color:var(--text-dim); cursor:pointer; border-radius:2px;
+  transition:all 0.2s;
+}
+.day-chip:hover { border-color:var(--amber-dim); color:var(--text); }
+.day-chip input { accent-color:var(--amber); cursor:pointer; }
+.day-chip:has(input:checked) { background:var(--amber-bg); border-color:var(--amber-dim); color:var(--amber); }
+
+.trigger-table { width:100%; border-collapse:collapse; font-size:13px; }
+.trigger-table th { text-align:left; padding:8px 10px; font-family:var(--head); font-weight:600; font-size:11px; letter-spacing:2px; color:var(--text-dim); text-transform:uppercase; border-bottom:1px solid var(--border2); background:rgba(0,0,0,0.3); }
+.trigger-table td { padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
+.trigger-table tr:hover td { background:rgba(255,255,255,0.02); }
+.trigger-table .status-enabled { color:var(--green); }
+.trigger-table .status-disabled { color:var(--text-dim); }
+.trigger-table .action-btns { display:flex; gap:6px; }
+.trigger-table .action-btn {
+  background:transparent; border:1px solid var(--border2);
+  color:var(--text-dim); font-family:var(--mono); font-size:11px;
+  padding:4px 8px; cursor:pointer; transition:all 0.2s;
+}
+.trigger-table .action-btn:hover { border-color:var(--amber); color:var(--amber); }
+.trigger-table .action-btn.delete:hover { border-color:var(--red); color:var(--red); }
+
 @media (max-width: 700px) {
   .grid-2, .grid-3 { grid-template-columns:1fr; }
   .thresh-grid { grid-template-columns:1fr 1fr; }
@@ -502,6 +528,11 @@ canvas.sparkline { width:100%; height:48px; display:block; }
   /* controls stack vertically */
   .ctrl-row { flex-direction: column; align-items: flex-start; gap: 10px; }
   .num-input-wrap { flex-wrap: wrap; }
+
+  /* automation tables */
+  .trigger-table { font-size:11px; }
+  .trigger-table th, .trigger-table td { padding:6px 4px; }
+  .day-chip { padding:3px 5px; font-size:9px; }
 }
 </style>
 </head>
@@ -533,6 +564,7 @@ canvas.sparkline { width:100%; height:48px; display:block; }
   <div class="nav-tab" data-tab="alarms">Alarms <span class="badge" id="alarmBadge" style="display:none">0</span></div>
   <div class="nav-tab" data-tab="audit">Audit Log</div>
   <?php if($is_admin): ?>
+  <div class="nav-tab" data-tab="automation">Automation</div>
   <div class="nav-tab" data-tab="users">Users</div>
   <?php endif; ?>
 </nav>
@@ -677,6 +709,141 @@ canvas.sparkline { width:100%; height:48px; display:block; }
     </div>
   </section>
 
+  <!-- ═══════════ AUTOMATION (admin only) ════════════ -->
+  <?php if($is_admin): ?>
+  <section class="section" id="tab-automation">
+    <div class="grid-2" style="gap:16px;">
+      <!-- Time Schedules -->
+      <div>
+        <div class="section-title">Time Schedules — Turn plugs on/off at specific times</div>
+        <div class="panel" data-label="Create Schedule">
+          <div class="c tl"></div><div class="c tr"></div><div class="c bl"></div><div class="c br"></div>
+          <div class="panel-body">
+            <div class="inline-form">
+              <div class="form-field">
+                <label>Schedule Name</label>
+                <input type="text" id="schedName" placeholder="e.g., Morning Lights On">
+              </div>
+              <div class="form-field">
+                <label>Plug</label>
+                <select id="schedPlug"><option value="">Select plug...</option></select>
+              </div>
+              <div class="form-field">
+                <label>Action</label>
+                <select id="schedAction">
+                  <option value="turn_on">Turn ON</option>
+                  <option value="turn_off">Turn OFF</option>
+                </select>
+              </div>
+            </div>
+            <div class="inline-form">
+              <div class="form-field">
+                <label>Time</label>
+                <input type="time" id="schedTime" value="08:00">
+              </div>
+              <div class="form-field" style="flex:1;">
+                <label>Days</label>
+                <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                  <label class="day-chip"><input type="checkbox" class="sched-day" value="0" checked> Sun</label>
+                  <label class="day-chip"><input type="checkbox" class="sched-day" value="1" checked> Mon</label>
+                  <label class="day-chip"><input type="checkbox" class="sched-day" value="2" checked> Tue</label>
+                  <label class="day-chip"><input type="checkbox" class="sched-day" value="3" checked> Wed</label>
+                  <label class="day-chip"><input type="checkbox" class="sched-day" value="4" checked> Thu</label>
+                  <label class="day-chip"><input type="checkbox" class="sched-day" value="5" checked> Fri</label>
+                  <label class="day-chip"><input type="checkbox" class="sched-day" value="6" checked> Sat</label>
+                </div>
+              </div>
+              <button class="save-btn" onclick="addSchedule()" style="align-self:flex-end;">ADD SCHEDULE</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" data-label="Active Schedules" style="margin-top:16px;">
+          <div class="c tl"></div><div class="c tr"></div><div class="c bl"></div><div class="c br"></div>
+          <div class="panel-body">
+            <table class="trigger-table" id="schedulesTable">
+              <thead><tr><th>Name</th><th>Plug</th><th>Time</th><th>Days</th><th>Action</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="schedulesBody"><tr><td colspan="7" style="color:var(--text-dim);">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sensor Triggers -->
+      <div>
+        <div class="section-title">Sensor Triggers — React to temperature/humidity</div>
+        <div class="panel" data-label="Create Trigger">
+          <div class="c tl"></div><div class="c tr"></div><div class="c bl"></div><div class="c br"></div>
+          <div class="panel-body">
+            <div class="inline-form">
+              <div class="form-field">
+                <label>Trigger Name</label>
+                <input type="text" id="triggerName" placeholder="e.g., Hot Fan On">
+              </div>
+              <div class="form-field">
+                <label>Plug</label>
+                <select id="triggerPlug"><option value="">Select plug...</option></select>
+              </div>
+              <div class="form-field">
+                <label>Action</label>
+                <select id="triggerAction">
+                  <option value="turn_on">Turn ON</option>
+                  <option value="turn_off">Turn OFF</option>
+                </select>
+              </div>
+            </div>
+            <div class="inline-form">
+              <div class="form-field">
+                <label>Sensor</label>
+                <select id="triggerSensor">
+                  <option value="temp_high">Temperature Above</option>
+                  <option value="temp_low">Temperature Below</option>
+                  <option value="humidity_high">Humidity Above</option>
+                  <option value="humidity_low">Humidity Below</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>Threshold</label>
+                <input type="number" id="triggerThreshold" step="0.5" placeholder="25.0">
+              </div>
+              <div class="form-field">
+                <label>Node (optional)</label>
+                <select id="triggerNode"><option value="">All nodes</option></select>
+              </div>
+              <button class="save-btn" onclick="addTrigger()" style="align-self:flex-end;">ADD TRIGGER</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" data-label="Active Triggers" style="margin-top:16px;">
+          <div class="c tl"></div><div class="c tr"></div><div class="c bl"></div><div class="c br"></div>
+          <div class="panel-body">
+            <table class="trigger-table" id="triggersTable">
+              <thead><tr><th>Name</th><th>Plug</th><th>Condition</th><th>Threshold</th><th>Action</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="triggersBody"><tr><td colspan="7" style="color:var(--text-dim);">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Action Log -->
+    <div style="margin-top:16px;">
+      <div class="section-title">Recent Automation Actions</div>
+      <div class="panel" data-label="Action Log">
+        <div class="c tl"></div><div class="c tr"></div><div class="c bl"></div><div class="c br"></div>
+        <div class="panel-body">
+          <table class="log-table" id="actionLogTable">
+            <thead><tr><th>Time</th><th>Plug</th><th>Action</th><th>Triggered By</th><th>Details</th></tr></thead>
+            <tbody id="actionLogBody"><tr><td colspan="5" style="color:var(--text-dim);">Loading...</td></tr></tbody>
+          </table>
+          <button class="load-more-btn" id="loadMoreActionsBtn" onclick="loadMoreActionLog()">▼ LOAD MORE</button>
+        </div>
+      </div>
+    </div>
+  </section>
+  <?php endif; ?>
+
   <!-- ═══════════ USERS (admin only) ════════════ -->
   <?php if($is_admin): ?>
   <section class="section" id="tab-users">
@@ -754,6 +921,7 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
     if (tab.dataset.tab === 'users' && IS_ADMIN) loadUsers();
     if (tab.dataset.tab === 'thresholds') loadThresholds();
     if (tab.dataset.tab === 'controls') { loadSettings(); if(IS_ADMIN) { loadNodeRename(); loadKasaPlugs(); } }
+    if (tab.dataset.tab === 'automation' && IS_ADMIN) loadAutomation();
   });
 });
 
@@ -1270,6 +1438,242 @@ async function createUser() {
 function escHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── AUTOMATION ─────────────────────────────────────────────────────────
+let actionLogOffset = 0;
+const ACTION_LOG_PAGE = 25;
+
+async function loadAutomation() {
+  // Load plugs for dropdowns
+  const plugsD = await apiGet('kasa_plugs');
+  const plugs = plugsD.ok ? plugsD.plugs : [];
+  
+  // Populate plug dropdowns
+  const schedPlug = document.getElementById('schedPlug');
+  const triggerPlug = document.getElementById('triggerPlug');
+  
+  const plugOptions = plugs.map(p => `<option value="${escHtml(p.plug_id)}">${escHtml(p.display_name)}</option>`).join('');
+  schedPlug.innerHTML = '<option value="">Select plug...</option>' + plugOptions;
+  triggerPlug.innerHTML = '<option value="">Select plug...</option>' + plugOptions;
+  
+  // Load nodes for trigger dropdown
+  const nodesD = await apiGet('nodes');
+  const liveD = await apiGet('live');
+  const allNodes = {};
+  (liveD.nodes || []).forEach(n => allNodes[n.node_id] = n.display_name || n.node_id);
+  (nodesD.nodes || []).forEach(n => allNodes[n.node_id] = n.display_name || n.node_id);
+  
+  const triggerNode = document.getElementById('triggerNode');
+  triggerNode.innerHTML = '<option value="">All nodes</option>' + 
+    Object.entries(allNodes).map(([id, name]) => `<option value="${escHtml(id)}">${escHtml(name)}</option>`).join('');
+  
+  // Load triggers
+  await loadTriggersAndSchedules();
+  
+  // Load action log
+  actionLogOffset = 0;
+  await loadActionLog();
+}
+
+async function loadTriggersAndSchedules() {
+  const d = await apiPost('kasa_list_triggers');
+  if (!d.ok) return;
+  
+  const schedules = d.triggers.filter(t => t.trigger_type === 'time_of_day');
+  const triggers = d.triggers.filter(t => t.trigger_type !== 'time_of_day' && t.trigger_type !== 'manual');
+  
+  // Render schedules
+  const schedBody = document.getElementById('schedulesBody');
+  if (schedules.length === 0) {
+    schedBody.innerHTML = '<tr><td colspan="7" style="color:var(--text-dim);">No schedules configured.</td></tr>';
+  } else {
+    schedBody.innerHTML = schedules.map(s => {
+      const days = formatDays(s.days_of_week || '0123456');
+      const statusClass = s.is_active ? 'status-enabled' : 'status-disabled';
+      const statusText = s.is_active ? '● Active' : '○ Disabled';
+      return `<tr>
+        <td>${escHtml(s.trigger_name)}</td>
+        <td>${escHtml(s.plug_name || s.plug_id)}</td>
+        <td>${s.time_value ? s.time_value.substring(0,5) : '-'}</td>
+        <td>${days}</td>
+        <td>${s.action === 'turn_on' ? 'ON' : 'OFF'}</td>
+        <td class="${statusClass}">${statusText}</td>
+        <td class="action-btns">
+          <button class="action-btn" onclick="toggleTrigger(${s.id}, ${s.is_active ? 0 : 1})">${s.is_active ? 'Disable' : 'Enable'}</button>
+          <button class="action-btn delete" onclick="deleteTrigger(${s.id})">Delete</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+  
+  // Render sensor triggers
+  const trigBody = document.getElementById('triggersBody');
+  if (triggers.length === 0) {
+    trigBody.innerHTML = '<tr><td colspan="7" style="color:var(--text-dim);">No sensor triggers configured.</td></tr>';
+  } else {
+    const sensorLabels = {
+      'temp_high': 'Temp >',
+      'temp_low': 'Temp <',
+      'humidity_high': 'Humidity >',
+      'humidity_low': 'Humidity <'
+    };
+    trigBody.innerHTML = triggers.map(t => {
+      const statusClass = t.is_active ? 'status-enabled' : 'status-disabled';
+      const statusText = t.is_active ? '● Active' : '○ Disabled';
+      const threshold = t.threshold_value !== null ? parseFloat(t.threshold_value).toFixed(1) : '-';
+      return `<tr>
+        <td>${escHtml(t.trigger_name)}</td>
+        <td>${escHtml(t.plug_name || t.plug_id)}</td>
+        <td>${sensorLabels[t.trigger_type] || t.trigger_type}</td>
+        <td>${threshold}</td>
+        <td>${t.action === 'turn_on' ? 'ON' : 'OFF'}</td>
+        <td class="${statusClass}">${statusText}</td>
+        <td class="action-btns">
+          <button class="action-btn" onclick="toggleTrigger(${t.id}, ${t.is_active ? 0 : 1})">${t.is_active ? 'Disable' : 'Enable'}</button>
+          <button class="action-btn delete" onclick="deleteTrigger(${t.id})">Delete</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+function formatDays(daysStr) {
+  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const days = daysStr ? daysStr.split('').map(Number) : [0,1,2,3,4,5,6];
+  if (days.length === 7) return 'Daily';
+  return days.map(d => dayNames[d]).join(', ');
+}
+
+function getSelectedDays(className) {
+  const checkboxes = document.querySelectorAll('.' + className + ':checked');
+  const days = Array.from(checkboxes).map(cb => cb.value).sort();
+  return days.join('');
+}
+
+async function addSchedule() {
+  const name = document.getElementById('schedName').value.trim();
+  const plugId = document.getElementById('schedPlug').value;
+  const action = document.getElementById('schedAction').value;
+  const time = document.getElementById('schedTime').value;
+  const days = getSelectedDays('sched-day');
+  
+  if (!name || !plugId || !time) {
+    toast('Please fill in all fields', 'err');
+    return;
+  }
+  
+  const d = await apiPost('kasa_add_trigger', {
+    plug_id: plugId,
+    trigger_name: name,
+    trigger_type: 'time_of_day',
+    time_value: time + ':00',
+    days_of_week: days || '0123456',
+    action_type: action
+  });
+  
+  if (d.ok) {
+    toast('Schedule added successfully', 'ok');
+    document.getElementById('schedName').value = '';
+    document.getElementById('schedPlug').value = '';
+    document.getElementById('schedTime').value = '08:00';
+    // Reset days to all checked
+    document.querySelectorAll('.sched-day').forEach(cb => cb.checked = true);
+    await loadTriggersAndSchedules();
+  } else {
+    toast(d.error || 'Failed to add schedule', 'err');
+  }
+}
+
+async function addTrigger() {
+  const name = document.getElementById('triggerName').value.trim();
+  const plugId = document.getElementById('triggerPlug').value;
+  const action = document.getElementById('triggerAction').value;
+  const sensor = document.getElementById('triggerSensor').value;
+  const threshold = parseFloat(document.getElementById('triggerThreshold').value);
+  const nodeId = document.getElementById('triggerNode').value || null;
+  
+  if (!name || !plugId || isNaN(threshold)) {
+    toast('Please fill in all fields', 'err');
+    return;
+  }
+  
+  const d = await apiPost('kasa_add_trigger', {
+    plug_id: plugId,
+    trigger_name: name,
+    trigger_type: sensor,
+    node_id: nodeId,
+    threshold_value: threshold,
+    action_type: action
+  });
+  
+  if (d.ok) {
+    toast('Trigger added successfully', 'ok');
+    document.getElementById('triggerName').value = '';
+    document.getElementById('triggerPlug').value = '';
+    document.getElementById('triggerThreshold').value = '';
+    document.getElementById('triggerNode').value = '';
+    await loadTriggersAndSchedules();
+  } else {
+    toast(d.error || 'Failed to add trigger', 'err');
+  }
+}
+
+async function toggleTrigger(triggerId, isActive) {
+  const d = await apiPost('kasa_toggle_trigger', { trigger_id: triggerId, is_active: isActive });
+  if (d.ok) {
+    toast(isActive ? 'Trigger enabled' : 'Trigger disabled', 'ok');
+    await loadTriggersAndSchedules();
+  } else {
+    toast(d.error || 'Failed to toggle trigger', 'err');
+  }
+}
+
+async function deleteTrigger(triggerId) {
+  if (!confirm('Are you sure you want to delete this trigger?')) return;
+  
+  const d = await apiPost('kasa_delete_trigger', { trigger_id: triggerId });
+  if (d.ok) {
+    toast('Trigger deleted', 'ok');
+    await loadTriggersAndSchedules();
+  } else {
+    toast(d.error || 'Failed to delete trigger', 'err');
+  }
+}
+
+async function loadActionLog(append = false) {
+  const d = await apiGet('kasa_actions_log', { limit: ACTION_LOG_PAGE, offset: actionLogOffset });
+  const body = document.getElementById('actionLogBody');
+  if (!d.ok) { body.innerHTML = '<tr><td colspan="5" style="color:var(--red);">Error loading action log</td></tr>'; return; }
+  
+  const rows = d.actions.map(a => {
+    const triggerLabel = a.trigger_name || a.trigger_type || 'Manual';
+    let details = '';
+    if (a.sensor_value !== null && a.threshold_value !== null) {
+      details = `Value: ${parseFloat(a.sensor_value).toFixed(1)}, Threshold: ${parseFloat(a.threshold_value).toFixed(1)}`;
+    }
+    return `<tr>
+      <td class="col-time">${a.created_at}</td>
+      <td>${escHtml(a.plug_name || a.plug_id)}</td>
+      <td style="color:${a.action === 'turn_on' ? 'var(--green)' : 'var(--red)'}">${a.action === 'turn_on' ? 'ON' : 'OFF'}</td>
+      <td>${escHtml(triggerLabel)}</td>
+      <td style="color:var(--text-dim);font-size:12px;">${details}</td>
+    </tr>`;
+  }).join('');
+  
+  if (append) {
+    body.innerHTML += rows;
+  } else {
+    body.innerHTML = rows || '<tr><td colspan="5" style="color:var(--text-dim);">No actions recorded.</td></tr>';
+  }
+  
+  const btn = document.getElementById('loadMoreActionsBtn');
+  if (btn) btn.style.display = (actionLogOffset + ACTION_LOG_PAGE) < (d.actions?.length || 0) ? '' : 'none';
+}
+
+function loadMoreActionLog() {
+  actionLogOffset += ACTION_LOG_PAGE;
+  loadActionLog(true);
 }
 
 // ── POLLING LOOP ──────────────────────────────────────────────────────

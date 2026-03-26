@@ -151,6 +151,7 @@ try {
     // ── GET plug actions log ─────────────────────────────────────────────────
     if ($action === 'kasa_actions_log') {
         require_admin();
+        error_log("kasa_actions_log called, user: " . ($user['username'] ?? 'unknown'));
         $limit = min((int)($_GET['limit'] ?? 50), 200);
         $plug_id = $_GET['plug_id'] ?? '';
         
@@ -170,8 +171,14 @@ try {
         $params[] = $limit;
         
         $stmt = $db->prepare($sql);
-        $stmt->execute($params);
-        echo json_encode(['ok' => true, 'actions' => $stmt->fetchAll()]);
+        $paramIndex = 1;
+        foreach ($params as $param) {
+            $stmt->bindValue($paramIndex++, $param, is_int($param) ? PDO::PARAM_INT : PDO::PARAM_STR);
+        }
+        $stmt->execute();
+        $actions = $stmt->fetchAll();
+        error_log("kasa_actions_log returning " . count($actions) . " actions");
+        echo json_encode(['ok' => true, 'actions' => $actions]);
         exit;
     }
 

@@ -127,7 +127,7 @@ try {
                ->execute([$user['username'], "Kasa switch: $switch_id", null, $label]);
             
             // Log to plug actions
-            $kasa->logPlugAction($switch_id, $state ? 'turn_on' : 'turn_off', 'manual', $user['username']);
+            $kasa->logPlugAction($switch_id, $state ? 'turn_on' : 'turn_off', 'manual', null, $user['username']);
             
             echo json_encode(['ok' => true, 'switch' => $switch_id, 'state' => $label, 'display_name' => $plug_info['display_name']]);
         } else {
@@ -182,7 +182,8 @@ try {
         $node_id = $body['node_id'] ?? null;
         $threshold_value = isset($body['threshold_value']) ? (float)$body['threshold_value'] : null;
         $time_value = $body['time_value'] ?? null;
-        $action_type = $body['action'] ?? '';
+        $days_of_week = $body['days_of_week'] ?? '0123456';
+        $action_type = $body['action_type'] ?? '';
         
         if (!$plug_id || !$trigger_name || !$trigger_type || !$action_type) {
             die(json_encode(['error' => 'plug_id, trigger_name, trigger_type, and action required']));
@@ -203,7 +204,7 @@ try {
             die(json_encode(['error' => 'time_value required for time_of_day triggers']));
         }
 
-        $result = $kasa->addTrigger($plug_id, $trigger_name, $trigger_type, $node_id, $threshold_value, $time_value, $action_type);
+        $result = $kasa->addTrigger($plug_id, $trigger_name, $trigger_type, $node_id, $threshold_value, $time_value, $days_of_week, $action_type);
         
         if ($result) {
             $db->prepare("INSERT INTO audit_log (username, action, old_value, new_value) VALUES (?,?,?,?)")
@@ -220,10 +221,108 @@ try {
     if ($action === 'kasa_list_triggers') {
         require_admin();
         $plug_id = $body['plug_id'] ?? '';
-        if (!$plug_id) die(json_encode(['error' => 'plug_id required']));
-        
-        $triggers = $kasa->getPlugTriggers($plug_id);
+        if (!$plug_id) {
+            // List all triggers with plug info
+            $triggers = $db->query("
+                SELECT pt.*, kp.display_name as plug_name, kp.ip_address
+                FROM plug_triggers pt
+                JOIN kasa_plugs kp ON pt.plug_id = kp.plug_id
+                WHERE kp.is_active = 1
+                ORDER BY pt.trigger_type, pt.trigger_name
+            ")->fetchAll();
+        } else {
+            $triggers = $kasa->getPlugTriggers($plug_id);
+        }
         echo json_encode(['ok' => true, 'triggers' => $triggers]);
+        exit;
+    }
+
+    // ── Update plug trigger ──────────────────────────────────────────────────────
+    if ($action === 'kasa_update_trigger') {
+        require_admin();
+        $trigger_id = (int)($body['trigger_id'] ?? 0);
+        $trigger_name = trim($body['trigger_name'] ?? '');
+        $trigger_type = $body['trigger_type'] ?? '';
+        $node_id = $body['node_id'] ?? null;
+        $threshold_value = isset($body['threshold_value']) ? (float)$body['threshold_value'] : null;
+        $time_value = $body['time_value'] ?? null;
+        $days_of_week = $body['days_of_week'] ?? '0123456';
+        $action_type = $body['action_type'] ?? '';
+        $is_active = isset($body['is_active']) ? (int)(bool)$body['is_active'] : 1;
+
+        if (!$trigger_id || !$trigger_name || !$trigger_type || !$action_type) {
+            die(json_encode(['error' => 'trigger_id, trigger_name, trigger_type, and action required']));
+        }
+
+        $allowed_types = ['manual', 'temp_high', 'temp_low', 'humidity_high', 'humidity_low', 'time_of_day'];
+        $allowed_actions = ['turn_on', 'turn_off'];
+
+        if (!in_array($trigger_type, $allowed_types) || !in_array($action_type, $allowed_actions)) {
+            die(json_encode(['error' => 'Invalid trigger_type or action']));
+        }
+
+        $stmt = $db->prepare("
+            UPDATE plug_triggers
+            SET trigger_name = ?, trigger_type = ?, node_id = ?,
+                threshold_value = ?, time_value = ?, days_of_week = ?,
+                action = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ");
+        $result = $stmt->execute([$trigger_name, $trigger_type, $node_id, $threshold_value, $time_value, $days_of_week, $action_type, $is_active, $trigger_id]);
+
+        if ($result) {
+            $db->prepare("INSERT INTO audit_log (username, action, old_value, new_value) VALUES (?,?,?,?)")
+               ->execute([$user['username'], "Updated trigger: $trigger_name", null, "$trigger_type -> $action_type"]);
+            echo json_encode(['ok' => true]);
+        } else {
+            echo json_encode(['error' => 'Failed to update trigger']);
+        }
+        exit;
+    }
+
+    // ── Delete plug trigger ──────────────────────────────────────────────────────
+    if ($action === 'kasa_delete_trigger') {
+        require_admin();
+        $trigger_id = (int)($body['trigger_id'] ?? 0);
+        if (!$trigger_id) die(json_encode(['error' => 'trigger_id required']));
+
+        // Get trigger name for audit log
+        $trigger = $db->prepare("SELECT trigger_name FROM plug_triggers WHERE id = ?");
+        $trigger->execute([$trigger_id]);
+        $trigger_name = $trigger->fetch()['trigger_name'] ?? 'unknown';
+
+        $stmt = $db->prepare("DELETE FROM plug_triggers WHERE id = ?");
+        $result = $stmt->execute([$trigger_id]);
+
+        if ($result) {
+            $db->prepare("INSERT INTO audit_log (username, action, old_value, new_value) VALUES (?,?,?,?)")
+               ->execute([$user['username'], "Deleted trigger: $trigger_name", null, null]);
+            echo json_encode(['ok' => true]);
+        } else {
+            echo json_encode(['error' => 'Failed to delete trigger']);
+        }
+        exit;
+    }
+
+    // ── Toggle trigger active state ───────────────────────────────────────────────
+    if ($action === 'kasa_toggle_trigger') {
+        require_admin();
+        $trigger_id = (int)($body['trigger_id'] ?? 0);
+        $is_active = isset($body['is_active']) ? (int)(bool)$body['is_active'] : 1;
+
+        if (!$trigger_id) die(json_encode(['error' => 'trigger_id required']));
+
+        $stmt = $db->prepare("UPDATE plug_triggers SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?");
+        $result = $stmt->execute([$is_active, $trigger_id]);
+
+        if ($result) {
+            $status = $is_active ? 'enabled' : 'disabled';
+            $db->prepare("INSERT INTO audit_log (username, action, old_value, new_value) VALUES (?,?,?,?)")
+               ->execute([$user['username'], "Toggle trigger #$trigger_id", null, $status]);
+            echo json_encode(['ok' => true, 'is_active' => $is_active]);
+        } else {
+            echo json_encode(['error' => 'Failed to toggle trigger']);
+        }
         exit;
     }
 

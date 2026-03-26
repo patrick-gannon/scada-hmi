@@ -41,7 +41,7 @@ A web-based operator interface deployed at [utilities.blue/environment-monitor](
 - **Sparklines** — 1-hour trend graph per node, per measurement
 - **Online/offline detection** — nodes marked offline if no reading within 1.5× scan interval
 - **Operator controls** — start/stop logging, adjust scan rate, all changes reflect on field devices immediately
-- **Kasa smart plug controls** — control TP-Link Kasa smart plugs from the HMI with manual, time-based, and automated sensor triggers
+- **Automation system** — Create time-based schedules and sensor triggers for Kasa plugs with day-of-week selection, enable/disable triggers, action log with 1-hour cooldown between firings
 - **Per-node thresholds** — set high/low limits for temperature and humidity per node or globally
 - **Alarm historian** — all threshold breaches logged with 30-minute cooldown between alerts
 - **Email alerts** — PHPMailer/Gmail SMTP notifications on threshold breach
@@ -74,7 +74,8 @@ A web-based operator interface deployed at [utilities.blue/environment-monitor](
 - Audit trail — all operator actions logged with username, old and new values
 - Auto-restart — systemd service restarts the logger on reboot or crash
 - Alarm management — email and Discord alerts on threshold breach
-- Kasa smart plug integration — manual, time-based, and automated control of TP-Link Kasa smart plugs based on sensor thresholds
+- **Automation tab** (admin only) — Manage time schedules (turn on/off at specific times on selected days) and sensor triggers (temperature/humidity thresholds)
+- **Kasa smart plug integration** — Manual control, time-based schedules, and automated sensor triggers with action logging and cooldown protection
 
 ## Tech Stack
 
@@ -96,19 +97,26 @@ A web-based operator interface deployed at [utilities.blue/environment-monitor](
 scada-hmi/
 ├── pi/
 │   ├── log_environment.py        # Main logging script
+│   ├── local_controller_simple.py # Kasa plug local controller
+│   ├── check_tunnel.sh           # Health check for SSH tunnels (run via cron)
+│   ├── scada.service             # systemd service definition (SSH tunnels + logger)
+│   ├── local_controller.service  # systemd service for Kasa plug controller
 │   └── scada_config.template.ini # Config template (copy to scada_config.ini)
 ├── database/
 │   └── schema.sql                # All database tables (core + HMI + plugs)
 ├── hmi/                          # Web-based operator interface
-│   ├── index.php                 # Main dashboard
+│   ├── index.php                 # Main dashboard with Automation tab
+│   ├── cron/
+│   │   └── check_schedules.php   # Time-based schedule executor (run via cron on VPS)
 │   ├── login.php                 # Authentication
 │   ├── api/
 │   │   ├── auth.php              # Login / logout
-│   │   ├── data.php              # GET endpoints (live, audit, alarms, thresholds)
-│   │   └── control.php           # POST endpoints (settings, thresholds, users, Kasa)
+│   │   ├── data.php              # GET endpoints (live, audit, alarms, thresholds, actions log)
+│   │   └── control.php           # POST endpoints (settings, thresholds, users, Kasa triggers)
 │   ├── includes/
 │   │   ├── db.php                # PDO database connection
 │   │   ├── auth.php              # Session management and role checks
+│   │   ├── kasa_control.php      # Kasa plug controller class with trigger logic
 │   │   └── alerts.php            # Threshold checker and alert dispatcher (cron)
 │   ├── .env.template             # Environment variable template
 │   ├── .htaccess                 # Directory protection
@@ -206,14 +214,29 @@ PI_IP_ADDRESS=127.0.0.1
 PI_PORT=8081
 ```
 
-#### 5. Set up time-based trigger cron job
+#### 5. Set up automation cron jobs
 ```bash
 sudo crontab -e -u www-data
-# Add for minute-by-minute time trigger checking:
-* * * * * /usr/bin/php /var/www/html/environment-monitor/includes/time_triggers.php >> /var/log/scada-time-triggers.log 2>&1
+# Add for time-based schedule checking (every minute):
+* * * * * /usr/bin/php /var/www/html/environment-monitor/includes/check_schedules.php >> /var/log/scada-schedules.log 2>&1
+
+# Add for sensor trigger checking (every minute):
+* * * * * /usr/bin/php /var/www/html/environment-monitor/includes/alerts.php >> /var/log/scada-alerts.log 2>&1
 ```
 
-#### 6. Supported plug models
+#### 6. Set up tunnel health monitoring (recommended)
+The `check_tunnel.sh` script monitors both MySQL (3306) and controller (8081) tunnels:
+```bash
+# Copy the script to your Pi
+cp pi/check_tunnel.sh ~/scada-hmi/pi/
+chmod +x ~/scada-hmi/pi/check_tunnel.sh
+
+# Add to crontab on Pi (runs every 2 minutes)
+crontab -e
+*/2 * * * * /home/patrick/scada-hmi/pi/check_tunnel.sh
+```
+
+#### 7. Supported plug models
 - TP-Link Kasa HS100, HS103, HS125, and other Kasa smart plugs
 - Plugs must be on the same network as the Raspberry Pi
 - No cloud account required - uses local network control

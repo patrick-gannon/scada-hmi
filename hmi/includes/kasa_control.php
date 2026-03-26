@@ -141,13 +141,13 @@ class KasaController {
     /**
      * Add a trigger for a plug
      */
-    public function addTrigger($plugId, $triggerName, $triggerType, $nodeId = null, $thresholdValue = null, $timeValue = null, $action) {
+    public function addTrigger($plugId, $triggerName, $triggerType, $nodeId = null, $thresholdValue = null, $timeValue = null, $daysOfWeek = '0123456', $action) {
         $stmt = $this->db->prepare("
-            INSERT INTO plug_triggers (plug_id, trigger_name, trigger_type, node_id, threshold_value, time_value, action)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO plug_triggers (plug_id, trigger_name, trigger_type, node_id, threshold_value, time_value, days_of_week, action)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ");
         
-        return $stmt->execute([$plugId, $triggerName, $triggerType, $nodeId, $thresholdValue, $timeValue, $action]);
+        return $stmt->execute([$plugId, $triggerName, $triggerType, $nodeId, $thresholdValue, $timeValue, $daysOfWeek, $action]);
     }
     
     /**
@@ -155,7 +155,7 @@ class KasaController {
      */
     public function getPlugTriggers($plugId) {
         $stmt = $this->db->prepare("
-            SELECT id, trigger_name, trigger_type, node_id, threshold_value, time_value, action, is_active, created_at
+            SELECT id, trigger_name, trigger_type, node_id, threshold_value, time_value, days_of_week, action, is_active, created_at
             FROM plug_triggers
             WHERE plug_id = ? AND is_active = 1
             ORDER BY trigger_name
@@ -168,13 +168,13 @@ class KasaController {
     /**
      * Log plug action
      */
-    public function logPlugAction($plugId, $action, $triggerType, $triggeredBy = null, $nodeId = null, $sensorValue = null, $thresholdValue = null) {
+    public function logPlugAction($plugId, $action, $triggerType, $triggerName = null, $triggeredBy = null, $nodeId = null, $sensorValue = null, $thresholdValue = null) {
         $stmt = $this->db->prepare("
-            INSERT INTO plug_actions_log (plug_id, action, trigger_type, triggered_by, node_id, sensor_value, threshold_value)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO plug_actions_log (plug_id, action, trigger_type, trigger_name, triggered_by, node_id, sensor_value, threshold_value)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ");
         
-        return $stmt->execute([$plugId, $action, $triggerType, $triggeredBy, $nodeId, $sensorValue, $thresholdValue]);
+        return $stmt->execute([$plugId, $action, $triggerType, $triggerName, $triggeredBy, $nodeId, $sensorValue, $thresholdValue]);
     }
     
     /**
@@ -194,16 +194,19 @@ class KasaController {
         
         $stmt->execute([$nodeId]);
         $triggers = $stmt->fetchAll();
+        error_log("Found " . count($triggers) . " triggers for node: $nodeId");
         
         $currentTime = date('H:i');
         
         foreach ($triggers as $trigger) {
+            error_log("Processing trigger: " . $trigger['trigger_name'] . " type: " . $trigger['trigger_type'] . " temp: $temperature threshold: " . $trigger['threshold_value']);
             $shouldTrigger = false;
             $sensorValue = null;
             $thresholdValue = null;
             
             switch ($trigger['trigger_type']) {
                 case 'temp_high':
+                    error_log("Checking temp_high: temp=$temperature >= threshold=" . $trigger['threshold_value'] . " = " . ($temperature >= $trigger['threshold_value'] ? 'true' : 'false'));
                     if ($temperature !== null && $temperature >= $trigger['threshold_value']) {
                         $shouldTrigger = true;
                         $sensorValue = $temperature;
@@ -233,37 +236,65 @@ class KasaController {
                     break;
                 case 'time_of_day':
                     // Check if current time matches trigger time (within 1 minute)
-                    if ($trigger['time_value']) {
-                        $triggerTime = date('H:i', strtotime($trigger['time_value']));
-                        $currentMinutes = (int)date('H') * 60 + (int)date('i');
-                        $triggerMinutes = (int)date('H', strtotime($trigger['time_value'])) * 60 + (int)date('i', strtotime($trigger['time_value']));
+                    // and if today is in the allowed days
+                    if ($trigger['time_value'] && $trigger['days_of_week']) {
+                        $currentDay = (int)date('w'); // 0=Sunday, 1=Monday, etc.
+                        $allowedDays = str_split($trigger['days_of_week']);
                         
-                        // Trigger if within 1 minute of the target time
-                        if (abs($currentMinutes - $triggerMinutes) <= 1) {
-                            // Check if this trigger was already executed in the last 2 hours to avoid repeats
-                            $recentCheck = $this->db->prepare("
-                                SELECT id FROM plug_actions_log 
-                                WHERE plug_id = ? AND trigger_type = 'time_of_day' 
-                                AND created_at >= DATE_SUB(NOW(), INTERVAL 2 HOUR)
-                                ORDER BY created_at DESC LIMIT 1
-                            ");
-                            $recentCheck->execute([$trigger['plug_id']]);
-                            if (!$recentCheck->fetch()) {
-                                $shouldTrigger = true;
-                                $thresholdValue = $trigger['time_value'];
+                        if (in_array((string)$currentDay, $allowedDays)) {
+                            $triggerTime = date('H:i', strtotime($trigger['time_value']));
+                            $currentMinutes = (int)date('H') * 60 + (int)date('i');
+                            $triggerMinutes = (int)date('H', strtotime($trigger['time_value'])) * 60 + (int)date('i', strtotime($trigger['time_value']));
+                            
+                            // Trigger if within 1 minute of the target time
+                            if (abs($currentMinutes - $triggerMinutes) <= 1) {
+                                // Check if this trigger was already executed in the last 23 hours to avoid repeats
+                                $recentCheck = $this->db->prepare("
+                                    SELECT id FROM plug_actions_log 
+                                    WHERE plug_id = ? AND trigger_type = 'time_of_day' 
+                                    AND trigger_name = ?
+                                    AND created_at >= DATE_SUB(NOW(), INTERVAL 23 HOUR)
+                                    ORDER BY created_at DESC LIMIT 1
+                                ");
+                                $recentCheck->execute([$trigger['plug_id'], $trigger['trigger_name']]);
+                                if (!$recentCheck->fetch()) {
+                                    $shouldTrigger = true;
+                                    $thresholdValue = $trigger['time_value'];
+                                }
                             }
                         }
                     }
                     break;
             }
             
+            error_log("shouldTrigger for " . $trigger['trigger_name'] . ": " . ($shouldTrigger ? 'true' : 'false'));
+            
+            // Check cooldown - don't re-trigger within 1 hour for same trigger
+            if ($shouldTrigger && $trigger['trigger_type'] !== 'time_of_day') {
+                $recentCheck = $this->db->prepare("
+                    SELECT id FROM plug_actions_log 
+                    WHERE plug_id = ? AND trigger_name = ? 
+                    AND trigger_type = ?
+                    AND created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)
+                    ORDER BY created_at DESC LIMIT 1
+                ");
+                $recentCheck->execute([$trigger['plug_id'], $trigger['trigger_name'], $trigger['trigger_type']]);
+                if ($recentCheck->fetch()) {
+                    error_log("Trigger " . $trigger['trigger_name'] . " skipped - already fired within last hour");
+                    $shouldTrigger = false;
+                }
+            }
+            
             if ($shouldTrigger) {
+                error_log("Attempting to control plug: " . $trigger['plug_id'] . " at " . $trigger['ip_address'] . " action: " . $trigger['action']);
                 $result = $this->controlPlug($trigger['ip_address'], $trigger['action'] === 'turn_on');
+                error_log("Control result: " . json_encode($result));
                 
                 $this->logPlugAction(
                     $trigger['plug_id'],
                     $trigger['action'],
                     $trigger['trigger_type'],
+                    $trigger['trigger_name'],
                     'system',
                     $nodeId,
                     $sensorValue,
